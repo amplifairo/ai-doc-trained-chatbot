@@ -11,7 +11,7 @@ from langchain.indexes import VectorstoreIndexCreator
 from langchain.indexes.vectorstore import VectorStoreIndexWrapper
 from langchain.llms import OpenAI
 from langchain.vectorstores import Chroma
-import socket
+# import socket
 
 
 openai_api_key = None
@@ -32,12 +32,11 @@ PERSIST = False
 query = None
 
 ## getting the hostname by socket.gethostname() method
-hostname = socket.gethostname()
+# hostname = socket.gethostname()
 ## getting the IP address using socket.gethostbyname() method
-ip_address = socket.gethostbyname(hostname)
-## printing the hostname and ip_address
-print(f"Hostname: {hostname}")
-print(f"IP Address: {ip_address}")
+# ip_address = socket.gethostbyname(hostname)
+# print(f"Hostname: {hostname}")
+# print(f"IP Address: {ip_address}")
 
 if PERSIST and os.path.exists("persist"):
   print("Reusing index...\n")
