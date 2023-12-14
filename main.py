@@ -21,8 +21,8 @@ if openai in st.secrets and api_key in st.secrets.openai:
 if not openai_api_key:
   import constants
   openai_api_key = constants.APIKEY
+  os.environ["OPENAI_API_KEY"] = openai_api_key
 
-os.environ["OPENAI_API_KEY"] = openai_api_key
 
 
 # Enable to save to disk & reuse the model (for repeated queries on the same data)
