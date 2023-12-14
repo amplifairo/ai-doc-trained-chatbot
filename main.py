@@ -15,7 +15,7 @@ from langchain.vectorstores import Chroma
 
 
 openai_api_key = None
-if openai in st.secrets and api_key in st.secrets.openai:
+if 'openai' in st.secrets and 'api_key' in st.secrets.openai:
   openai_api_key = st.secrets.openai.api_key
 
 if not openai_api_key:
