@@ -1,6 +1,7 @@
 .streamlit/secrets.toml
 constants.py
 .venv/
+db/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
