@@ -14,7 +14,7 @@ gatherUsageStats = true
 # ability to detect changes to files in your filesystem.
 # If you'd like to turn off this warning, set this to True.
 # Default: false
-disableWatchdogWarning = false
+# disableWatchdogWarning = false
 
 # By default, Streamlit displays a warning when a user sets both a widget
 # default value in the function defining the widget and a widget value via
@@ -50,7 +50,7 @@ messageFormat = "%(asctime)s %(message)s"
 # Whether to enable st.cache. This does not affect st.cache_data or
 # st.cache_resource.
 # Default: true
-caching = true
+# caching = true
 
 # ***DEPRECATED***
 # client.displayEnabled has been deprecated and will be removed in a future
@@ -58,7 +58,7 @@ caching = true
 # ****************
 # If false, makes your Streamlit script not draw to a Streamlit app.
 # Default: true
-displayEnabled = true
+# displayEnabled = true
 
 # Controls whether uncaught app exceptions and deprecation warnings
 # are displayed in the browser. By default, this is set to True and

@@ -1,25 +1,29 @@
-import streamlit as st
+from langchain_community.document_loaders import WebBaseLoader, TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import create_retrieval_chain
+from langchain.retrievers import MultiQueryRetriever
+
+# from langchain import hub
+
+# #cachex
+# import hashlib
+# from gptcache import Cache
+# from gptcache.adapter.api import init_similar_cache
+# from langchain.cache import GPTCache
+# from langchain.globals import set_llm_cache
+
+# cache
+from langchain.cache import SQLiteCache
+import langchain
+
 import os
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
-import openai
-from langchain.chains import ConversationalRetrievalChain, RetrievalQA
-from langchain.chat_models import ChatOpenAI
-from langchain.document_loaders import DirectoryLoader, TextLoader, WebBaseLoader
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.indexes import VectorstoreIndexCreator
-from langchain.text_splitter import CharacterTextSplitter, RecursiveCharacterTextSplitter
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
-from langchain.indexes.vectorstore import VectorStoreIndexWrapper
-from langchain.prompts import PromptTemplate
-from langchain.memory import ChatMessageHistory, ConversationBufferMemory
-from langchain.llms import OpenAI
-from langchain.vectorstores import Chroma
-# import socket
-
-
+import streamlit as st
+from streamlit_pills import pills
 openai_api_key = None
 if 'openai' in st.secrets and 'api_key' in st.secrets.openai:
   openai_api_key = st.secrets.openai.api_key
@@ -35,106 +39,71 @@ if 'langchain' in st.secrets and 'api_key' in st.secrets.langchain:
   os.environ["LANGCHAIN_API_KEY"] = st.secrets.langchain.api_key
   os.environ["LANGCHAIN_PROJECT"] = st.secrets.langchain.project_name
 
-# Enable to save to disk & reuse the model (for repeated queries on the same data)
+# cachex
+# def get_hashed_name(name):
+#     return hashlib.sha256(name.encode()).hexdigest()
 
-# CHARACTER_NAME = st.secrets.app.name
+# def init_gptcache(cache_obj: Cache, llm: str):
+#     hashed_llm = get_hashed_name(llm)
+#     init_similar_cache(cache_obj=cache_obj, data_dir=f"similar_cache_{hashed_llm}")
 
-query = None
+# set_llm_cache(GPTCache(init_gptcache))
 
-# Prompt
-# PROMPT_TEMPLATE = """
-#     Use the following pieces of context to answer the question at the end. 
-#     You are role playing as {CHARACTER_NAME}. Always reply as a person. NEVER BREAK THE CHARACTER!
-#     You have your own opinions and knowledge based on the information you have provided 
-#     in the context. Never lie. If you dont know the answer then just say that you were not able to find that 
-#     information in your database, don't try to make up an answer. You can use the chat history to answer some 
-#     specific questions if required.
-#     {context}
-#     Question: {question}
-# """
+# setup cache
+langchain.llm_cache = SQLiteCache(database_path="./db/sqlite/growcentric.db")
 
-PROMPT_TEMPLATE = st.secrets.app.prompt
 
-QA_CHAIN_PROMPT = PromptTemplate.from_template(PROMPT_TEMPLATE)
+loader = TextLoader('./data/growcentric_ro.txt')
+# text_loader_kwargs={'autodetect_encoding': True}
+# loader = DirectoryLoader("data/", glob="**/*.txt"
+    # , use_multithreading=True
+    # , loader_cls=TextLoader
+    # , silent_errors=True
+    # , loader_kwargs=text_loader_kwargs)
+docs = loader.load()
+text_splitter = RecursiveCharacterTextSplitter()
+documents = text_splitter.split_documents(docs)
+embeddings = OpenAIEmbeddings()
 
-## getting the hostname by socket.gethostname() method
-# hostname = socket.gethostname()
-## getting the IP address using socket.gethostbyname() method
-# ip_address = socket.gethostbyname(hostname)
-# print(f"Hostname: {hostname}")
-# print(f"IP Address: {ip_address}")
+vector = FAISS.from_documents(documents, embeddings)
 
-# if PERSIST and os.path.exists("persist"):
-  # vectorstore = Chroma(persist_directory="persist", embedding_function=OpenAIEmbeddings())
-  # index = VectorStoreIndexWrapper(vectorstore=vectorstore)
-# else:
+# add docs from website
+webloader = WebBaseLoader("https://growcentric.ro/")
+webloader.requests_kwargs = {'verify':False}
+web_raw_documents = webloader.load()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+web_documents = text_splitter.split_documents(web_raw_documents)
+if len(web_documents) > 0:
+  vector.add_documents(web_documents)
 
-embedding = OpenAIEmbeddings(openai_api_key=openai_api_key)
-persist_directory = 'db'
-if not os.path.exists(persist_directory):
-  text_loader_kwargs={'autodetect_encoding': True}
-  loader = DirectoryLoader("data/", glob="**/*.txt", use_multithreading=True, loader_cls=TextLoader, silent_errors=True, loader_kwargs=text_loader_kwargs)
-  raw_documents = loader.load()
-  text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-  documents = text_splitter.split_documents(raw_documents)
-  # db = Chroma.from_documents(documents, embedding_function=OpenAIEmbeddings())
-  vectordb = Chroma.from_documents(documents=documents, 
-                                   embedding=embedding,
-                                   persist_directory=persist_directory)
-  # persiste the db to disk
-  vectordb.persist()
-  vectordb = None
+prompt_template = ChatPromptTemplate.from_template("""You are Tim, a top sales support specialist specializing in offering support to website visitors and converting them into leads as part of the GrowCentric team. 
+Your ultimate goal is to get a firm order from the user with the following details:
+- Name and surname
+- Phone number
+- Email address
+- Company name
+- Job title
+Answer the following question based only on the provided context that represents information about a romanian company GrowCentric.:
 
-# Now we can load the persisted database from disk, and use it as normal. 
-vectordb = Chroma(persist_directory=persist_directory, 
-                  embedding_function=embedding)
-retriever = vectordb.as_retriever(search_kwargs={"k": 1})
+<context>
+{context}
+</context>
 
-  # if PERSIST:
-  #   # index = VectorstoreIndexCreator(vectorstore_kwargs={"persist_directory":"persist"}).from_loaders([loader])
-  #   index = VectorstoreIndexCreator(vectorstore_kwargs={"persist_directory":"persist"}).from_documents([documents])
-  # else:
-  #   # index = VectorstoreIndexCreator().from_loaders([loader])
-  #   index = VectorstoreIndexCreator().from_documents(raw_documents)
+Question: {input}""")
+model = "gpt-4-1106-preview"
+llm = ChatOpenAI(model=model)
 
-@st.cache_resource
-def init_chat_history():
-  return ChatMessageHistory()
+document_chain = create_stuff_documents_chain(llm, prompt_template)
 
-@st.cache_resource
-def init_memory():
-  return ConversationBufferMemory(
-    memory_key='chat_history'
-    , return_messages=True
-    , output_key='answer'
-  )
-
-chat_history = init_chat_history()
-history = []
-memory = init_memory()
-
-# model = "gpt-4-1106-preview"
-model = st.secrets.openai.model
-chain = ConversationalRetrievalChain.from_llm(
-  llm=ChatOpenAI(model=model, temperature = 0.5),
-  retriever=retriever,
-  return_source_documents=True,
-  combine_docs_chain_kwargs={'prompt': QA_CHAIN_PROMPT},
-  # get_chat_history=lambda h :h,
-  # memory=memory,
-  chain_type="stuff"
-)
+retriever = vector.as_retriever()
+advanced_retriever = MultiQueryRetriever.from_llm(retriever=retriever, llm=llm)
+retrieval_chain = create_retrieval_chain(advanced_retriever, document_chain)
 
 def generate_response(query):
-    history = chat_history.messages
-    result = chain({
-      "question": query['content']
-      , "chat_history": history
-      # , "CHARACTER_NAME": CHARACTER_NAME
-      })
-    print(result)
+    response = retrieval_chain.invoke({"input": query})
+    return response["answer"]
 
-    return result['answer']
+# generate_response("what is the status of the vessel?")
 
 st.title(st.secrets.app.title) 
 st.markdown("""
@@ -148,27 +117,45 @@ st.markdown("""
         #stDecoration {display:none;}
     </style>
 """, unsafe_allow_html=True)
+
+selected = pills(
+    "Cele mai frecvente intrebari",
+    [
+        "Cand a fost infiintata compania?",
+        "Ce servicii ofera compania GrowCentric pentru piata din Romania?",
+        "Care este durata minima a contractului?",
+    ],
+    clearable=True,
+    index=None,
+)
+
+def add_to_message_history(role, content):
+    message = {"role": role, "content": str(content)}
+    st.session_state["messages"].append(
+        message
+    )  # Add response to message history
+
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": st.secrets.app.intro_message}]
-    chat_history.add_ai_message(st.secrets.app.intro_message)
+    st.session_state["messages"] = [{"role": "assistant", "content": 'Salut! Eu sunt Tim, cu ce te pot ajuta?'}]
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-if prompt := st.chat_input():
-    if not openai_api_key:
-        st.info("Please add your OpenAI API key to continue.")
-        st.stop()
+# To avoid duplicated display of answered pill questions each rerun
+if selected and selected not in st.session_state.get(
+    "displayed_pill_questions", set()
+):
+    st.session_state.setdefault("displayed_pill_questions", set()).add(selected)
+    add_to_message_history("user", selected)
+    st.chat_message("user").write(selected)
+    response = generate_response(selected)
+    add_to_message_history("assistant", response)
+    st.chat_message("assistant").write(response)
 
-    openai.api_key = openai_api_key
-    usermsg = {"role": "user", "content": prompt}
-    st.session_state.messages.append(usermsg)
+if prompt := st.chat_input():
+    add_to_message_history("user", prompt)
     st.chat_message("user").write(prompt)
-    chat_history.add_user_message(prompt)
-    response = generate_response(usermsg)
-    # msg = response.choices[0].message
-    msg = {"role": "assistant", "content": response}
-    print(msg['content'])
-    st.session_state.messages.append(msg)
-    # st.chat_message("assistant").write(msg)
-    st.chat_message("assistant").write(msg['content'])
+    response = generate_response(prompt)
+    add_to_message_history("assistant", response)
+    st.chat_message("assistant").write(response)
+
